@@ -1,5 +1,4 @@
-# csvtopostgresql
-Csv to PostgreSql
+# Csv to PostgreSql with PHP
 
 ## PT-BR
 
