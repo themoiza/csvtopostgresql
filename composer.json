@@ -1,0 +1,18 @@
+{
+    "name": "the.moiza/csvtopostgresql",
+    "description": "Converto CSV to PostgreSql",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "TheMoiza\\Csvtopostgresql\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Moisés de Lima",
+            "email": "the.moiza@gmail.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {}
+}
