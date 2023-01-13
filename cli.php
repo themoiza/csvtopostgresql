@@ -5,17 +5,31 @@ require_once 'vendor/autoload.php';
 
 use TheMoiza\Csvtopostgresql\CsvToPgsql;
 
-$zip = 'csv_example.zip';
+$csvToPgsql = new CsvToPgsql;
 
-$connection = [
-	"DB_HOST" => "127.0.0.1",
-	"DB_PORT" => "5432",
-	"DB_DATABASE" => "target_database",
-	"DB_USERNAME" => "user",
-	"DB_PASSWORD" => "pass",
-	"DB_SCHEMA" => "target_schema"
-];
+$csvToPgsql->setConfigs([
+	'createPkey' => true,
+	'enableTrim' => true,
+	'enableTransaction' => true,
+	'justCreateTables' => false,
+	'inputEncoding' => 'UTF-8',
+	'outputEncoding' => 'UTF-8'
+]);
 
-$csvToPgsql = new CsvToPgsql($connection);
-$csvToPgsql->verifySchema();
-$csvToPgsql->convertFromZip($zip);
+print 'Wait...'.PHP_EOL;
+
+$result = $csvToPgsql->convertCsvFromZip(
+	'csv_example.zip',
+	[
+		"DB_HOST" => "127.0.0.1",
+		"DB_PORT" => "5432",
+		"DB_DATABASE" => "csvtopostgresql",
+		"DB_USERNAME" => "csvtopostgresql",
+		"DB_PASSWORD" => "csvtopostgresql",
+		"DB_SCHEMA" => "target_schema"
+	]
+);
+
+print ($result['result'] ? 'Success' : 'Fail').PHP_EOL;
+
+print $result['message'].PHP_EOL;

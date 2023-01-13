@@ -1,7 +1,8 @@
 {
     "name": "the.moiza/csvtopostgresql",
-    "description": "Converto CSV to PostgreSql",
+    "description": "Convert CSV to PostgreSql",
     "license": "MIT",
+    "minimum-stability": "dev",
     "autoload": {
         "psr-4": {
             "TheMoiza\\Csvtopostgresql\\": "src/"
@@ -13,6 +14,11 @@
             "email": "the.moiza@gmail.com"
         }
     ],
-    "minimum-stability": "dev",
-    "require": {}
+    "require": {
+        "php": ">=7.2",
+        "ext-mbstring": "*",
+        "ext-fileinfo": "*",
+        "ext-zip": "*",
+        "ext-pdo": "*"
+    }
 }
