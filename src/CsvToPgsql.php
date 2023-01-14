@@ -4,24 +4,78 @@ namespace TheMoiza\Csvtopostgresql;
 
 use TheMoiza\Csvtopostgresql\CsvToPgsqlException;
 
-class CsvToPgsql{
-
+class CsvToPgsql
+{
+	/**
+	 * PDO connection to database
+	 *
+	 * @var object|bool
+	 */
 	protected object|bool $_pdo = false;
 
+	/**
+	 * PDO connection config, user, pass, db, schema, port, ip
+	 *
+	 * @var array
+	 */
 	protected array $_dbConnection = [];
 
-	protected array|bool $_error = false;
-
-	// ZIP EM ARQUIVO TEMPORÁRIO
+	/**
+	 * ZIP temp_file()
+	 *
+	 */
 	protected $_tempZipFile;
 
+	/**
+	 * If will be created a _pkey_ columns and pkey constraint
+	 *
+	 * @var bool
+	 */
 	protected $createPkey = false;
+
+	/**
+	 * If a fit function is performed on all values
+	 *
+	 * @var bool
+	 */
 	protected $enableTrim = true;
+
+	/**
+	 * If true, start the transaction, if it fail make the rollback, if it success make the commit
+	 *
+	 * @var bool
+	 */
 	protected $enableTransaction = true;
+
+	/**
+	 * If true, only tables structure is created
+	 *
+	 * @var bool
+	 */
 	protected $justCreateTables = false;
+
+	/**
+	 * Encoding of the CSV
+	 *
+	 * @var string
+	 */
 	protected $inputEncoding = 'UTF-8';
+
+	/**
+	 * Encoding of the database
+	 *
+	 * @var string
+	 */
 	protected $outputEncoding = 'UTF-8';
 
+    /**
+     * Set a config.
+     *
+     * @param  string  $param
+     * @param  bool|string  $value
+     * @param  array  $options
+     * @return object $this
+     */
 	public function setConfig(string $param, bool|string $value) :object
 	{
 		// VALIDATE BOOL PARAMS
@@ -38,6 +92,12 @@ class CsvToPgsql{
 		return $this;
 	}
 
+    /**
+     * Set multiples configs.
+     *
+     * @param  array  $configs
+     * @return object $this
+     */
 	public function setConfigs(array $configs) :object
 	{
 
@@ -49,6 +109,14 @@ class CsvToPgsql{
 		return $this;
 	}
 
+    /**
+     * Try to connect to postgresql.
+     *
+     * @param array $dbConnection
+     * @return object $this
+     *
+     * @throws \TheMoiza\Csvtopostgresql\CsvToPgsqlException
+     */
 	protected function _connectPgsql(array $dbConnection) :object
 	{
 
@@ -81,7 +149,13 @@ class CsvToPgsql{
 		return $string;
 	}
 
-	// CRIA SCHEMA SE AINDA NÃO EXISTOR
+    /**
+     * Try to create the schema if it doesn't exist
+     *
+     * @return object $this
+     *
+     * @throws \TheMoiza\Csvtopostgresql\CsvToPgsqlException
+     */
 	protected function _createSchema() :object{
 
 		try{
@@ -96,7 +170,14 @@ class CsvToPgsql{
 		return $this;
 	}
 
-	// CARREGA ZIP E SALVA EM UM ARQUIVO TEMPORÁRIO
+    /**
+     * Save Zip file to temp file with tempfile() method
+     *
+     * @param string $zipUrl
+     * @return array
+     *
+     * @throws \TheMoiza\Csvtopostgresql\CsvToPgsqlException
+     */
 	protected function _readZip($zipUrl) :array{
 
 		if(!is_file($zipUrl)){
@@ -133,8 +214,6 @@ class CsvToPgsql{
 	protected function _findDelimiter(string $string) :string{
 
 		if(!empty($string)){
-
-			$string = substr($string, 0, 10000);
 
 			$ex = str_split($string);
 			$chars = [];
