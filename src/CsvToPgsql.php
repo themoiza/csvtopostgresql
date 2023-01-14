@@ -97,7 +97,7 @@ class CsvToPgsql{
 	}
 
 	// CARREGA ZIP E SALVA EM UM ARQUIVO TEMPORÁRIO
-	protected function _loadZip($zipUrl) :array{
+	protected function _readZip($zipUrl) :array{
 
 		if(!is_file($zipUrl)){
 			throw new CsvToPgsqlException(sprintf('The %s file was not found, check the correct path.', $zipUrl));
@@ -122,6 +122,9 @@ class CsvToPgsql{
 
 			$extracted[$fileInZip['name']] = $i;
 		}
+
+		// OPTIMIZE RAM MEMORY
+		$zip = null;
 
 		return $extracted;
 	}
@@ -167,7 +170,11 @@ class CsvToPgsql{
 		fwrite($tempCsv, $csv);
 		fseek($tempCsv, 0);
 
-		while (($line = fgetcsv($tempCsv, null, $this->_findDelimiter($csv))) !== false){
+		// FIRST 8192 BYTES TO FIND DELIMITER
+		$delimiter = substr($csv, 0, 8192);
+		$delimiter = $this->_findDelimiter($delimiter);
+
+		while (($line = fgetcsv($tempCsv, 2048, $delimiter)) !== false){
 
 			// SKIT EMPTY LINES ON CSV FILE
 			if(count($line) > 0){
@@ -376,6 +383,9 @@ ddl;
 		// CRIA COLUNAS
 		$colsHead = [];
 		foreach ($headCols as $colName) {
+
+			$colName = trim($colName, " \n\r\t");
+
 			$colsHead[] = $this->_safeString($colName);
 		}
 
@@ -396,16 +406,16 @@ ddl;
 			$temp = [];
 			foreach($colsHead as $key => $head){
 
-				$value = 'NULL';
-				if($cols[$key] !== ''){
-
-					// ESCAPA ASPAS SIMPLES
-					$value = 'E\''.str_replace("'", "\'", $cols[$key]).'\'';
+				$value = null;
+				if(isset($cols[$key]) and $cols[$key] !== ''){
+					$value = $cols[$key];
 				}
 
-				$value = trim($value, ' ');
+				if($value === ''){
+					$value = null;
+				}
 
-				$temp['"'.$head.'"'] = $value;
+				$temp[$head] = $value;
 			}
 
 			$data[] = $temp;
@@ -413,18 +423,29 @@ ddl;
 
 		if(count($data) > 0){
 
-			$sql = '';
-			foreach($data as $line){
+			$pre = $data[0];
 
-				$cols = implode(',', array_keys($line));
-				$vals = implode(',', array_values($line));
+			$cols = [];
+			$vals = [];
+			foreach(array_keys($pre) as $col){
 
-				$sql .= "INSERT INTO ".$this->_dbConnection['DB_SCHEMA'].".$table ($cols) VALUES ($vals);".PHP_EOL;
+				$cols[] = '"'.$col.'"';
+				$vals[] = ':'.$col;
 			}
+
+			$cols = implode(',', $cols);
+			$vals = implode(',', $vals);
+
+			// CREATE SQL
+			$sql = "INSERT INTO ".$this->_dbConnection['DB_SCHEMA'].".$table ($cols) VALUES ($vals);".PHP_EOL;
+
+			$query = $this->_pdo->prepare($sql);
 
 			try{
 
-				$this->_pdo->query($sql);
+				foreach($data as $line){
+					$query->execute($line);
+				}
 
 			} catch (\PDOException $e){
 
@@ -438,7 +459,7 @@ ddl;
 
 		try {
 
-			$files = $this->_loadZip($zipUrl);
+			$files = $this->_readZip($zipUrl);
 
 			if(is_array($dbConnection) and $dbConnection){
 				$this->_connectPgsql($dbConnection);
@@ -452,12 +473,13 @@ ddl;
 
 			$this->_createSchema();
 
+			$zip = new \ZipArchive;
+			$zip->open(stream_get_meta_data($this->_tempZipFile)['uri']);
+
+			// CREATE TABLES
 			foreach($files as $name => $index){
 
 				if(preg_match('/.csv$/', $name)){
-
-					$zip = new \ZipArchive;
-					$zip->open(stream_get_meta_data($this->_tempZipFile)['uri']);
 
 					$currentFile = $zip->getFromIndex($index);
 
@@ -470,9 +492,27 @@ ddl;
 					}
 					// CREATE TABLE
 					$this->_createTable($name, $columns);
+				}
+			}
 
-					// INSERT DATA ON TABLE
-					if(!$this->justCreateTables){
+			// INSERT DATA
+			if(!$this->justCreateTables){
+
+				foreach($files as $name => $index){
+
+					if(preg_match('/.csv$/', $name)){
+
+						$currentFile = $zip->getFromIndex($index);
+
+						// LÊ UM POR UM
+						$columns = $this->_readCsvAsArray($name, $currentFile);
+
+						// CSV IS EMPTY
+						if(!$columns or count($columns) == 0){
+							continue;
+						}
+
+						// INSERT DATA ON TABLE
 						$this->_insert($name, $columns);
 					}
 				}
