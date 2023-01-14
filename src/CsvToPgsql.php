@@ -211,7 +211,10 @@ class CsvToPgsql
 	}
 
 	// DETERMINA O DELIMITADOR DO CSV
-	protected function _findDelimiter(string $string) :string{
+	protected function _findDelimiter($pointer) :string{
+
+		fseek($pointer, 0);
+		$string = fread($pointer, 10000);
 
 		if(!empty($string)){
 
@@ -237,49 +240,6 @@ class CsvToPgsql
 		}
 
 		return ',';
-	}
-
-	// CONVERTE CSV TO ARRAY, FAZENDO OS DEVIDOS TRATAMENTOS
-	protected function _readCsvAsArray(string $name, string $csv) :array{
-
-		$arr = [];
-
-		// fgetcsv PRECISA DE UM ARQUIVO EM DISCO, ENTÃO GRAVAR EM UM ARQUIVO TEMPORÁRIO
-		$tempCsv = tmpfile();
-		fwrite($tempCsv, $csv);
-		fseek($tempCsv, 0);
-
-		// FIRST 8192 BYTES TO FIND DELIMITER
-		$delimiter = substr($csv, 0, 8192);
-		$delimiter = $this->_findDelimiter($delimiter);
-
-		while (($line = fgetcsv($tempCsv, 2048, $delimiter)) !== false){
-
-			// SKIT EMPTY LINES ON CSV FILE
-			if(count($line) > 0){
-
-				// FAZ TRIM
-				foreach($line as $k => $v){
-
-					// CONVERT ENCODING
-					if($this->outputEncoding != $this->inputEncoding){
-						$v = mb_convert_encoding($v, $this->outputEncoding, $this->inputEncoding);
-					}
-
-					// TRIM
-					if($this->enableTrim){
-						$v = trim($v, " \n\r\t");
-					}
-
-					$line[$k] = $v;
-				}
-				$arr[] = $line;
-			}
-		}
-
-		fclose($tempCsv);
-
-		return $arr;
 	}
 
 	// PROCESSA NOME DO ARQUIVO CSV PARA UM NOME ACEITO
@@ -344,54 +304,7 @@ class CsvToPgsql
 	}
 
 	// CRIA A TABELA CASO ELA AINDA NÃO EXISTA
-	protected function _createTable($name, $columns) :void{
-
-		$table = $this->_safeString($name);
-
-		$headCols = array_values($columns[0]);
-
-		// CREATE COLUMNS
-		$ddls = [];
-		foreach ($headCols as $colName) {
-			$ddls[] = [
-				'column' => $this->_safeString($colName),
-				'type' => 'undefined'
-			];
-		}
-
-		// IDENTIFICA TIPOS DE DADOS
-		foreach ($columns as $key => $cols) {
-
-			// PULA CABEÇALHOS
-			if($key == 0){
-				continue;
-			}
-
-			// DETECT DATA TYPES
-			foreach($cols as $colIndex => $value){
-
-				// TRIM ON VALUE
-				$value = trim($value, " \n\t\t");
-
-				// IF STRING IS EMPTY, FORCE TO NULL
-				if($value === ''){
-					$value = null;
-				}
-
-				// IF NULL SKIP LOOP AND CONTINUE
-				if(is_null($value)){
-					continue;
-				}
-
-				// IF VALUE WAS DETECTED AS STRING, SKIP LOOP AND CONTINUE
-				if($ddls[$colIndex]['type'] == 'text'){
-					continue;
-				}
-
-				// DETECT DATA TYPES
-				$ddls[$colIndex]['type'] = $this->_detectDataType($value);
-			}
-		}
+	protected function _createTable($name, $ddls) :void{
 
 		$ddlCols = [];
 
@@ -431,13 +344,13 @@ class CsvToPgsql
 		}
 
 		if($this->createPkey){
-			$ddlCols[] =  'CONSTRAINT '.$table.'_pkey PRIMARY KEY (_pkey_)';
+			$ddlCols[] =  'CONSTRAINT '.$name.'_pkey PRIMARY KEY (_pkey_)';
 		}
 
 		$ddls = implode(','.PHP_EOL."\t", $ddlCols);
 
 		$ddl = <<<ddl
-CREATE TABLE IF NOT EXISTS {$this->_dbConnection['DB_SCHEMA']}.{$table} (
+CREATE TABLE IF NOT EXISTS {$this->_dbConnection['DB_SCHEMA']}.{$name} (
 	$ddls
 );
 ddl;
@@ -454,8 +367,6 @@ ddl;
 
 	// INSERE DADOS NA TABELA
 	protected function _insert($name, $columns) :void{
-
-		$table = $this->_safeString($name);
 
 		$headCols = array_values($columns[0]);
 
@@ -516,7 +427,7 @@ ddl;
 			$vals = implode(',', $vals);
 
 			// CREATE SQL
-			$sql = "INSERT INTO ".$this->_dbConnection['DB_SCHEMA'].".$table ($cols) VALUES ($vals);".PHP_EOL;
+			$sql = "INSERT INTO ".$this->_dbConnection['DB_SCHEMA'].".$name ($cols) VALUES ($vals);".PHP_EOL;
 
 			$query = $this->_pdo->prepare($sql);
 
@@ -533,10 +444,83 @@ ddl;
 		}
 	}
 
+	// CONVERTE CSV TO ARRAY, FAZENDO OS DEVIDOS TRATAMENTOS
+	protected function _readCsvStructure($pointer, string $delimiter, $ddls, $fn) :array{
+
+		$key = 0;
+		while (($line = fgetcsv($pointer, 2048, $delimiter)) !== false){
+
+			// SKIT EMPTY LINES ON CSV FILE
+			if(count($line) > 0){
+
+				// FAZ TRIM
+				foreach($line as $k => $v){
+
+					// CONVERT ENCODING
+					if($this->outputEncoding != $this->inputEncoding){
+						$v = mb_convert_encoding($v, $this->outputEncoding, $this->inputEncoding);
+					}
+
+					// TRIM
+					if($this->enableTrim){
+						$v = trim($v, " \n\r\t");
+					}
+
+					$line[$k] = $v;
+				}
+
+				// CSV IS EMPTY
+				if(!$line or count($line) == 0){
+					continue;
+				}
+
+				// MAKE DDLS
+				$ddls = $fn($line, $key, $ddls);
+			}
+
+			$key++;
+		}
+
+		return $ddls;
+	}
+
+	// CONVERTE CSV TO ARRAY, FAZENDO OS DEVIDOS TRATAMENTOS
+	protected function _readCsvAsArray($pointer, string $delimiter) :array{
+
+		$arr = [];
+		while (($line = fgetcsv($pointer, 2048, $delimiter)) !== false){
+
+			// SKIT EMPTY LINES ON CSV FILE
+			if(count($line) > 0){
+
+				// FAZ TRIM
+				foreach($line as $k => $v){
+
+					// CONVERT ENCODING
+					if($this->outputEncoding != $this->inputEncoding){
+						$v = mb_convert_encoding($v, $this->outputEncoding, $this->inputEncoding);
+					}
+
+					// TRIM
+					if($this->enableTrim){
+						$v = trim($v, " \n\r\t");
+					}
+
+					$line[$k] = $v;
+				}
+				$arr[] = $line;
+			}
+		}
+
+		return $arr;
+	}
+
 	// MÉTODO PRINCIPAL PARA A CONVERSÃO
 	public function convertCsvFromZip(string $zipUrl, bool|array $dbConnection = false) :array{
 
 		try {
+
+			$delimiter = ',';
 
 			$files = $this->_readZip($zipUrl);
 
@@ -555,36 +539,96 @@ ddl;
 			$zip = new \ZipArchive;
 			$zip->open(stream_get_meta_data($this->_tempZipFile)['uri']);
 
+			print 'Criando tabelas...'.PHP_EOL;
+
 			// CREATE TABLES
 			foreach($files as $name => $index){
 
 				if(preg_match('/.csv$/', $name)){
 
-					$currentFile = $zip->getFromIndex($index);
+					$pointer = tmpfile();
+					fwrite($pointer, $zip->getFromIndex($index));
 
 					// LÊ UM POR UM
-					$columns = $this->_readCsvAsArray($name, $currentFile);
+					fseek($pointer, 0);
+					$delimiter = $this->_findDelimiter($pointer);
 
-					// CSV IS EMPTY
-					if(!$columns or count($columns) == 0){
-						continue;
-					}
+					fseek($pointer, 0);
+
+					$ddls = [];
+					$ddls = $this->_readCsvStructure($pointer, $delimiter, $ddls, function($currentLine, $key, $ddls){
+
+						// HEADER
+						if($key == 0){
+		
+							// CREATE COLUMNS
+							foreach ($currentLine as $colName){
+
+								$ddls[] = [
+									'column' => $this->_safeString($colName),
+									'type' => 'undefined'
+								];
+							}
+
+							return $ddls;
+						}
+
+						// VALUES
+						if($key > 0){
+
+							// IDENTIFICA TIPOS DE DADOS
+							// DETECT DATA TYPES
+							foreach($currentLine as $colIndex => $value){
+
+								// TRIM ON VALUE
+								$value = trim($value, " \n\t\t");
+
+								// IF STRING IS EMPTY, FORCE TO NULL
+								if($value === ''){
+									$value = null;
+								}
+
+								// IF NULL SKIP LOOP AND CONTINUE
+								if(is_null($value)){
+									continue;
+								}
+	
+								// IF VALUE WAS DETECTED AS STRING, SKIP LOOP AND CONTINUE
+								if($ddls[$colIndex]['type'] == 'text'){
+									continue;
+								}
+
+								// DETECT DATA TYPES
+								$ddls[$colIndex]['type'] = $this->_detectDataType($value);
+							}
+
+							return $ddls;
+						}
+					});
+
 					// CREATE TABLE
-					$this->_createTable($name, $columns);
+					$this->_createTable($this->_safeString($name), $ddls);
+
+					fclose($pointer);
 				}
 			}
 
 			// INSERT DATA
 			if(!$this->justCreateTables){
 
+				print 'Inserindo dados...'.PHP_EOL;
+
 				foreach($files as $name => $index){
 
 					if(preg_match('/.csv$/', $name)){
 
-						$currentFile = $zip->getFromIndex($index);
+						$name = $this->_safeString($name);
 
-						// LÊ UM POR UM
-						$columns = $this->_readCsvAsArray($name, $currentFile);
+						$pointer = tmpfile();
+						fwrite($pointer, $zip->getFromIndex($index));
+
+						fseek($pointer, 0);
+						$columns = $this->_readCsvAsArray($pointer, $delimiter);
 
 						// CSV IS EMPTY
 						if(!$columns or count($columns) == 0){
@@ -593,6 +637,10 @@ ddl;
 
 						// INSERT DATA ON TABLE
 						$this->_insert($name, $columns);
+
+						print 'Inserindo dados em: '.$name.PHP_EOL;
+
+						fclose($pointer);
 					}
 				}
 			}
