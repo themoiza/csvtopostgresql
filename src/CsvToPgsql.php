@@ -68,6 +68,10 @@ class CsvToPgsql
 	 */
 	protected $outputEncoding = 'UTF-8';
 
+	private $_colsHead = false;
+
+	private $_insertQuery = false;
+
     /**
      * Set a config.
      *
@@ -347,11 +351,11 @@ class CsvToPgsql
 			$ddlCols[] =  'CONSTRAINT '.$name.'_pkey PRIMARY KEY (_pkey_)';
 		}
 
-		$ddls = implode(','.PHP_EOL."\t", $ddlCols);
+		$cols = implode(','.PHP_EOL."\t", $ddlCols);
 
 		$ddl = <<<ddl
 CREATE TABLE IF NOT EXISTS {$this->_dbConnection['DB_SCHEMA']}.{$name} (
-	$ddls
+	$cols
 );
 ddl;
 
@@ -366,81 +370,51 @@ ddl;
 	}
 
 	// INSERE DADOS NA TABELA
-	protected function _insert($name, $columns) :void{
+	protected function _insert($tableName, $ddls, $currentLine) :void{
 
-		$headCols = array_values($columns[0]);
+		// EXECUTE THIS ON TIME, PERFORMANCE OPTIMIZATION
+		if(!$this->_colsHead){
 
-		// CRIA COLUNAS
-		$colsHead = [];
-		foreach ($headCols as $colName) {
-
-			$colName = trim($colName, " \n\r\t");
-
-			$colsHead[] = $this->_safeString($colName);
+			// CRIA COLUNAS
+			$this->_colsHead = [];
+			foreach ($ddls[$tableName] as $line) {
+				$this->_colsHead[] = $line['column'];
+			}
 		}
 
-		// PREPARA DADOS
-		$data = [];
-		foreach ($columns as $key => $cols) {
-
-			// PULA CABEÇALHOS
-			if($key == 0){
-				continue;
-			}
-
-			// IGNORA LINHAS VAZIAS DO FIM DO CSV
-			if(count($colsHead) > 1 and count($cols) == 1){
-				continue;
-			}
-
-			$temp = [];
-			foreach($colsHead as $key => $head){
-
-				$value = null;
-				if(isset($cols[$key]) and $cols[$key] !== ''){
-					$value = $cols[$key];
-				}
-
-				if($value === ''){
-					$value = null;
-				}
-
-				$temp[$head] = $value;
-			}
-
-			$data[] = $temp;
-		}
-
-		if(count($data) > 0){
-
-			$pre = $data[0];
+		// EXECUTE THIS ON TIME, PERFORMANCE OPTIMIZATION
+		if(!$this->_insertQuery){
 
 			$cols = [];
 			$vals = [];
-			foreach(array_keys($pre) as $col){
+			foreach($ddls[$tableName] as $line){
 
-				$cols[] = '"'.$col.'"';
-				$vals[] = ':'.$col;
+				$cols[] = '"'.$line['column'].'"';
+				$vals[] = ':'.$line['column'];
 			}
 
 			$cols = implode(',', $cols);
 			$vals = implode(',', $vals);
 
 			// CREATE SQL
-			$sql = "INSERT INTO ".$this->_dbConnection['DB_SCHEMA'].".$name ($cols) VALUES ($vals);".PHP_EOL;
+			$sql = "INSERT INTO ".$this->_dbConnection['DB_SCHEMA'].".$tableName ($cols) VALUES ($vals);".PHP_EOL;
+	
+			$this->_insertQuery = $this->_pdo->prepare($sql);
+		}
 
-			$query = $this->_pdo->prepare($sql);
+		$payload = [];
+		foreach($this->_colsHead as $key => $column){
 
-			try{
+			$payload[$column] = $currentLine[$key] ?? null;
+		}
 
-				foreach($data as $line){
-					$query->execute($line);
-				}
+		try{
 
-			} catch (\PDOException $e){
+			$this->_insertQuery->execute($payload);
 
-				throw new CsvToPgsqlException($e->getMessage());
-			}
+		} catch (\PDOException $e){
+
+			throw new CsvToPgsqlException($e->getMessage());
 		}
 	}
 
@@ -485,15 +459,20 @@ ddl;
 	}
 
 	// CONVERTE CSV TO ARRAY, FAZENDO OS DEVIDOS TRATAMENTOS
-	protected function _readCsvAsArray($pointer, string $delimiter) :array{
+	protected function _readCsvAsArray($pointer, string $delimiter, $tableName, $ddls, $fnInsert) :void{
 
-		$arr = [];
+		$key = 0;
 		while (($line = fgetcsv($pointer, 2048, $delimiter)) !== false){
+
+			// SKIP THE FIRST LINE OF CSV
+			if($key == 0){
+				$key++;
+				continue;
+			}
 
 			// SKIT EMPTY LINES ON CSV FILE
 			if(count($line) > 0){
 
-				// FAZ TRIM
 				foreach($line as $k => $v){
 
 					// CONVERT ENCODING
@@ -506,13 +485,24 @@ ddl;
 						$v = trim($v, " \n\r\t");
 					}
 
+					// EMPTY TO NULL
+					if($v === ''){
+						$v = null;
+					}
+
 					$line[$k] = $v;
 				}
-				$arr[] = $line;
-			}
-		}
 
-		return $arr;
+				// CSV LINE IS EMPTY
+				if(count($line) == 0){
+					continue;
+				}
+
+				$fnInsert($tableName, $ddls, $line);
+			}
+
+			$key++;
+		}
 	}
 
 	// MÉTODO PRINCIPAL PARA A CONVERSÃO
@@ -542,9 +532,12 @@ ddl;
 			print 'Criando tabelas...'.PHP_EOL;
 
 			// CREATE TABLES
+			$ddls = [];
 			foreach($files as $name => $index){
 
 				if(preg_match('/.csv$/', $name)){
+
+					$tableName = $this->_safeString($name);
 
 					$pointer = tmpfile();
 					fwrite($pointer, $zip->getFromIndex($index));
@@ -555,8 +548,7 @@ ddl;
 
 					fseek($pointer, 0);
 
-					$ddls = [];
-					$ddls = $this->_readCsvStructure($pointer, $delimiter, $ddls, function($currentLine, $key, $ddls){
+					$ddls = $this->_readCsvStructure($pointer, $delimiter, $ddls, function($currentLine, $key, $ddls) use ($tableName){
 
 						// HEADER
 						if($key == 0){
@@ -564,7 +556,7 @@ ddl;
 							// CREATE COLUMNS
 							foreach ($currentLine as $colName){
 
-								$ddls[] = [
+								$ddls[$tableName][] = [
 									'column' => $this->_safeString($colName),
 									'type' => 'undefined'
 								];
@@ -594,12 +586,12 @@ ddl;
 								}
 	
 								// IF VALUE WAS DETECTED AS STRING, SKIP LOOP AND CONTINUE
-								if($ddls[$colIndex]['type'] == 'text'){
+								if($ddls[$tableName][$colIndex]['type'] == 'text'){
 									continue;
 								}
 
 								// DETECT DATA TYPES
-								$ddls[$colIndex]['type'] = $this->_detectDataType($value);
+								$ddls[$tableName][$colIndex]['type'] = $this->_detectDataType($value);
 							}
 
 							return $ddls;
@@ -607,7 +599,7 @@ ddl;
 					});
 
 					// CREATE TABLE
-					$this->_createTable($this->_safeString($name), $ddls);
+					$this->_createTable($tableName, $ddls[$tableName]);
 
 					fclose($pointer);
 				}
@@ -622,26 +614,27 @@ ddl;
 
 					if(preg_match('/.csv$/', $name)){
 
-						$name = $this->_safeString($name);
+						$tableName = $this->_safeString($name);
 
 						$pointer = tmpfile();
 						fwrite($pointer, $zip->getFromIndex($index));
 
 						fseek($pointer, 0);
-						$columns = $this->_readCsvAsArray($pointer, $delimiter);
+						$columns = $this->_readCsvAsArray($pointer, $delimiter, $tableName, $ddls, function($tableName, $ddls, $currentLine){
+	
+							// INSERT DATA ON TABLE
+							$this->_insert($tableName, $ddls, $currentLine);
 
-						// CSV IS EMPTY
-						if(!$columns or count($columns) == 0){
-							continue;
-						}
+						});
 
-						// INSERT DATA ON TABLE
-						$this->_insert($name, $columns);
-
-						print 'Inserindo dados em: '.$name.PHP_EOL;
+						print 'Inserindo dados em: '.$tableName.PHP_EOL;
 
 						fclose($pointer);
 					}
+
+					// INSERT RESET TO A NEW TABLE
+					$this->_colsHead = false;
+					$this->_insertQuery = false;
 				}
 			}
 
