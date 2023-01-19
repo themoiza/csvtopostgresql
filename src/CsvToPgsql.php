@@ -264,7 +264,7 @@ class CsvToPgsql
 		// REMOVE A EXTENSÃO
 		$string = preg_replace('/[^a-z]+/', '_', $string);
 
-		$string = trim($string, '_');
+		$string = trim($string ?? '', '_');
 
 		// ALTERA ESPAÇOS E HIFEN PARA UNDERLINE
 		$string = str_replace([' ', '-'], '_', $string);
@@ -398,7 +398,7 @@ ddl;
 
 			// CREATE SQL
 			$sql = "INSERT INTO ".$this->_dbConnection['DB_SCHEMA'].".$tableName ($cols) VALUES ($vals);".PHP_EOL;
-	
+
 			$this->_insertQuery = $this->_pdo->prepare($sql);
 		}
 
@@ -437,7 +437,7 @@ ddl;
 
 					// TRIM
 					if($this->enableTrim){
-						$v = trim($v, " \n\r\t");
+						$v = trim($v ?? '', " \n\r\t");
 					}
 
 					$line[$k] = $v;
@@ -470,36 +470,32 @@ ddl;
 				continue;
 			}
 
-			// SKIT EMPTY LINES ON CSV FILE
-			if(count($line) > 0){
-
-				foreach($line as $k => $v){
-
-					// CONVERT ENCODING
-					if($this->outputEncoding != $this->inputEncoding){
-						$v = mb_convert_encoding($v, $this->outputEncoding, $this->inputEncoding);
-					}
-
-					// TRIM
-					if($this->enableTrim){
-						$v = trim($v, " \n\r\t");
-					}
-
-					// EMPTY TO NULL
-					if($v === ''){
-						$v = null;
-					}
-
-					$line[$k] = $v;
-				}
-
-				// CSV LINE IS EMPTY
-				if(count($line) == 0){
-					continue;
-				}
-
-				$fnInsert($tableName, $ddls, $line);
+			// SKIT CSV EMPTY LINES
+			if(count($line) != count($ddls[$tableName])){
+				continue;
 			}
+
+			foreach($line as $k => $v){
+
+				// CONVERT ENCODING
+				if($this->outputEncoding != $this->inputEncoding){
+					$v = mb_convert_encoding($v, $this->outputEncoding, $this->inputEncoding);
+				}
+
+				// TRIM
+				if($this->enableTrim){
+					$v = trim($v ?? '', " \n\r\t");
+				}
+
+				// EMPTY TO NULL
+				if($v === ''){
+					$v = null;
+				}
+
+				$line[$k] = $v;
+			}
+
+			$fnInsert($tableName, $ddls, $line);
 
 			$key++;
 		}
@@ -573,7 +569,7 @@ ddl;
 							foreach($currentLine as $colIndex => $value){
 
 								// TRIM ON VALUE
-								$value = trim($value, " \n\t\t");
+								$value = trim($value ?? '', " \n\t\t");
 
 								// IF STRING IS EMPTY, FORCE TO NULL
 								if($value === ''){
