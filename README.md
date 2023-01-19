@@ -13,6 +13,11 @@ Join this project: https://discord.com/channels/973324521987792916/9733245219877
 
 Support this project: https://skit.network/donate
 
+## UNIT TEST
+```
+composer test
+```
+
 ## PT-BR
 
 Dependências da ferramenta: **php7.2 ou maior**, **mbstring**, **fileinfo**, **zip** e **pdo**;
