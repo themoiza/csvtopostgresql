@@ -14,6 +14,11 @@
             "email": "the.moiza@gmail.com"
         }
     ],
+    "scripts": {
+        "test": [
+            "@php vendor/bin/phpunit tests"
+        ]
+    },
     "require": {
         "php": ">=7.2",
         "ext-mbstring": "*",
@@ -22,6 +27,6 @@
         "ext-pdo": "*"
     },
     "require-dev": {
-        "phpunit/phpunit": "10.0.x-dev"
+        "phpunit/phpunit": "^9"
     }
 }
