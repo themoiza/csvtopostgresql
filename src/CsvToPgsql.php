@@ -608,6 +608,8 @@ ddl;
 			// INSERT DATA
 			if(!$this->justCreateTables){
 
+				$delimiter = ',';
+
 				print 'Inserindo dados...'.PHP_EOL;
 
 				foreach($files as $name => $index){
@@ -618,6 +620,9 @@ ddl;
 
 						$pointer = tmpfile();
 						fwrite($pointer, $zip->getFromIndex($index));
+
+						fseek($pointer, 0);
+						$delimiter = $this->_findDelimiter($pointer);
 
 						fseek($pointer, 0);
 						$columns = $this->_readCsvAsArray($pointer, $delimiter, $tableName, $ddls, function($tableName, $ddls, $currentLine){
