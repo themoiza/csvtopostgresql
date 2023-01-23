@@ -70,7 +70,9 @@ class CsvToPgsql
 
 	private $_colsHead = false;
 
-	private $_insertQuery = false;
+	private $_insertQuery = [];
+
+	public $byPageInsert = 50000;
 
     /**
      * Set a config.
@@ -370,7 +372,7 @@ ddl;
 	}
 
 	// INSERE DADOS NA TABELA
-	protected function _insert($tableName, $ddls, $currentLine) :void{
+	protected function _prepareInsert($tableName, $ddls, $currentLine) :void{
 
 		// EXECUTE THIS ON TIME, PERFORMANCE OPTIMIZATION
 		if(!$this->_colsHead){
@@ -382,39 +384,61 @@ ddl;
 			}
 		}
 
-		// EXECUTE THIS ON TIME, PERFORMANCE OPTIMIZATION
-		if(!$this->_insertQuery){
-
-			$cols = [];
-			$vals = [];
-			foreach($ddls[$tableName] as $line){
-
-				$cols[] = '"'.$line['column'].'"';
-				$vals[] = ':'.$line['column'];
-			}
-
-			$cols = implode(',', $cols);
-			$vals = implode(',', $vals);
-
-			// CREATE SQL
-			$sql = "INSERT INTO ".$this->_dbConnection['DB_SCHEMA'].".$tableName ($cols) VALUES ($vals);".PHP_EOL;
-
-			$this->_insertQuery = $this->_pdo->prepare($sql);
-		}
-
 		$payload = [];
 		foreach($this->_colsHead as $key => $column){
 
-			$payload[$column] = $currentLine[$key] ?? null;
+			$val = $currentLine[$key] ?? null;
+
+			// ESCAPE SIMPLES QUOTES '
+			if(!is_null($val)){
+				$val = 'E\''.str_replace("'", "\'", $val).'\'';
+			}
+
+			// EMPTY STRING OR NULL TO 'null'
+			if($val === '' or is_null($val)){
+				$val = 'null';
+			}
+
+			$payload['"'.$column.'"'] = $val;
 		}
 
-		try{
+		// CREATE SQL
+		$cols = implode(', ', array_keys($payload));
+		$vals = implode(', ', array_values($payload));
 
-			$this->_insertQuery->execute($payload);
+		$this->_insertQuery[] = sprintf('INSERT INTO %s.%s (%s) VALUES (%s);', $this->_dbConnection['DB_SCHEMA'], $tableName, $cols, $vals);
+	}
 
-		} catch (\PDOException $e){
+	protected function _insert(bool $inLoop = true) :void
+	{
 
-			throw new CsvToPgsqlException($e->getMessage());
+		if($inLoop === true and count($this->_insertQuery) == $this->byPageInsert){
+
+			try{
+
+				$this->_pdo->query(implode(PHP_EOL, $this->_insertQuery));
+
+				$this->_insertQuery = [];
+
+				print 'Insert Page...'.PHP_EOL;
+
+			} catch (\PDOException $e){
+
+				throw new CsvToPgsqlException($e->getMessage());
+			}
+
+		}else if($inLoop === false and count($this->_insertQuery) > 0){
+
+			try{
+
+				$this->_pdo->query(implode(PHP_EOL, $this->_insertQuery));
+
+				$this->_insertQuery = [];
+
+			} catch (\PDOException $e){
+
+				throw new CsvToPgsqlException($e->getMessage());
+			}
 		}
 	}
 
@@ -525,7 +549,7 @@ ddl;
 			$zip = new \ZipArchive;
 			$zip->open(stream_get_meta_data($this->_tempZipFile)['uri']);
 
-			print 'Criando tabelas...'.PHP_EOL;
+			print 'Start to create tables...'.PHP_EOL;
 
 			// CREATE TABLES
 			$ddls = [];
@@ -604,9 +628,9 @@ ddl;
 			// INSERT DATA
 			if(!$this->justCreateTables){
 
-				$delimiter = ',';
+				print 'Start to insert data...'.PHP_EOL;
 
-				print 'Inserindo dados...'.PHP_EOL;
+				$delimiter = ',';
 
 				foreach($files as $name => $index){
 
@@ -624,18 +648,21 @@ ddl;
 						$columns = $this->_readCsvAsArray($pointer, $delimiter, $tableName, $ddls, function($tableName, $ddls, $currentLine){
 	
 							// INSERT DATA ON TABLE
-							$this->_insert($tableName, $ddls, $currentLine);
+							$this->_prepareInsert($tableName, $ddls, $currentLine);
 
+							$this->_insert($inLoop = true);
 						});
 
-						print 'Inserindo dados em: '.$tableName.PHP_EOL;
-
 						fclose($pointer);
+
+						$this->_insert($inLoop = false);
 					}
 
 					// INSERT RESET TO A NEW TABLE
 					$this->_colsHead = false;
-					$this->_insertQuery = false;
+					$this->_insertQuery = [];
+
+					print 'Insert into table '.$tableName.' is done'.PHP_EOL;
 				}
 			}
 
