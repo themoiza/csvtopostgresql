@@ -54,7 +54,7 @@ class ImportTest extends TestCase{
 			]
 		);
 
-		$this->assertEquals($result['result'], true);
+		$this->assertEquals(true, $result['result']);
 	}
 
 	public function testAmountLinesOfCitiesCsv(){
@@ -62,7 +62,7 @@ class ImportTest extends TestCase{
 		$query = $this->connection->query('SELECT count(1) as total from test_schema.cities');
 		$fetch = $query->fetch(\PDO::FETCH_OBJ);
 
-		$this->assertEquals($fetch->total, 128);
+		$this->assertEquals(128, $fetch->total);
 	}
 
 	public function testAmountLinesOfTreesCsv(){
@@ -70,7 +70,7 @@ class ImportTest extends TestCase{
 		$query = $this->connection->query('SELECT count(1) as total from test_schema.trees');
 		$fetch = $query->fetch(\PDO::FETCH_OBJ);
 
-		$this->assertEquals($fetch->total, 31);
+		$this->assertEquals(31, $fetch->total);
 	}
 
 	public function testDataTypes(){
@@ -93,11 +93,11 @@ class ImportTest extends TestCase{
 			$adjustArray[$line['column']] = $line;
 		}
 
-		$this->assertEquals($adjustArray['integer']['type'], 'integer');
-		$this->assertEquals($adjustArray['string']['type'], 'text');
-		$this->assertEquals($adjustArray['timestamp']['type'], 'timestamp without time zone');
-		$this->assertEquals($adjustArray['date']['type'], 'date');
-		$this->assertEquals($adjustArray['boolean']['type'], 'boolean');
-		$this->assertEquals($adjustArray['numeric']['type'], 'numeric');
+		$this->assertEquals('integer', $adjustArray['integer']['type']);
+		$this->assertEquals('text', $adjustArray['string']['type']);
+		$this->assertEquals('timestamp without time zone', $adjustArray['timestamp']['type']);
+		$this->assertEquals('date', $adjustArray['date']['type']);
+		$this->assertEquals('boolean', $adjustArray['boolean']['type']);
+		$this->assertEquals('numeric', $adjustArray['numeric']['type']);
 	}
 }

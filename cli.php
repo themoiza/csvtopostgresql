@@ -16,7 +16,7 @@ $csvToPgsql->setConfigs([
 	'outputEncoding' => 'UTF-8'
 ]);
 
-print 'Wait...'.PHP_EOL;
+print sprintf('Start at %s Wait...', date('d/m/Y H:i:s')).PHP_EOL;
 
 $result = $csvToPgsql->convertCsvFromZip(
 	'csv_example.zip',
@@ -32,4 +32,4 @@ $result = $csvToPgsql->convertCsvFromZip(
 
 print ($result['result'] ? 'Success' : 'Fail').PHP_EOL;
 
-print $result['message'].PHP_EOL;
+print $result['message'].' - end at '.date('d/m/Y H:i:s').PHP_EOL;
