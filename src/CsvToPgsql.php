@@ -530,8 +530,6 @@ ddl;
 
 		try {
 
-			$delimiter = ',';
-
 			$files = $this->_readZip($zipUrl);
 
 			if(is_array($dbConnection) and $dbConnection){
@@ -630,8 +628,6 @@ ddl;
 
 				print 'Start to insert data...'.PHP_EOL;
 
-				$delimiter = ',';
-
 				foreach($files as $name => $index){
 
 					if(preg_match('/.csv$/', $name)){
@@ -645,7 +641,7 @@ ddl;
 						$delimiter = $this->_findDelimiter($pointer);
 
 						fseek($pointer, 0);
-						$columns = $this->_readCsvAsArray($pointer, $delimiter, $tableName, $ddls, function($tableName, $ddls, $currentLine){
+						$this->_readCsvAsArray($pointer, $delimiter, $tableName, $ddls, function($tableName, $ddls, $currentLine){
 	
 							// INSERT DATA ON TABLE
 							$this->_prepareInsert($tableName, $ddls, $currentLine);
