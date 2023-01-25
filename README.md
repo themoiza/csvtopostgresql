@@ -1,6 +1,11 @@
+<div style="text-align: center;">
+
 # Csv to PostgreSql with PHP
 
 Converte CSV para PostgreSql.
+
+[![PHP Composer](https://github.com/themoiza/csvtopostgresql/actions/workflows/php.yml/badge.svg?branch=master)](https://github.com/themoiza/csvtopostgresql/actions/workflows/php.yml) <a href="https://packagist.org/packages/the.moiza/csvtopostgresql"><img src="https://img.shields.io/packagist/dt/the.moiza/csvtopostgresql" alt="Total Downloads"></a> <a href="https://packagist.org/packages/the.moiza/csvtopostgresql"><img src="https://img.shields.io/packagist/v/the.moiza/csvtopostgresql" alt="Latest Stable Version"></a> <a href="https://packagist.org/packages/the.moiza/csvtopostgresql"><img src="https://img.shields.io/packagist/l/the.moiza/csvtopostgresql" alt="License"></a>
+</div>
 
 ## Install with composer
 ```
