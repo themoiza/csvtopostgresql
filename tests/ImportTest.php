@@ -39,7 +39,8 @@ class ImportTest extends TestCase{
 			'enableTransaction' => true,
 			'justCreateTables' => false,
 			'inputEncoding' => 'UTF-8',
-			'outputEncoding' => 'UTF-8'
+			'outputEncoding' => 'UTF-8',
+			'readSeparator' => '2'
 		]);
 
 		$result = $csvToPgsql->convertCsvFromZip(

@@ -68,6 +68,16 @@ class CsvToPgsql
 	 */
 	protected $outputEncoding = 'UTF-8';
 
+	/**
+	 * Read separator
+	 *
+	 * @var string
+	 * 1 = Only first line, 2 line by line 
+	 */
+	protected $readSeparator = '1';
+
+	private $_delimiter = ';';
+
 	private $_colsHead = false;
 
 	private $_insertQuery = [];
@@ -91,7 +101,7 @@ class CsvToPgsql
 		}
 
 		// VALIDATE STRING PARAMS
-		if(is_string($value) and in_array($param, ['inputEncoding', 'outputEncoding'])){
+		if(is_string($value) and in_array($param, ['inputEncoding', 'outputEncoding', 'readSeparator'])){
 			$this->{$param} = $value;
 		}
 
@@ -263,9 +273,6 @@ class CsvToPgsql
 		// TUDO PARA MINÚSCULO
 		$string = strtolower($string);
 
-		// REMOVE A EXTENSÃO
-		$string = preg_replace('/[^a-z]+/', '_', $string);
-
 		$string = trim($string ?? '', '_');
 
 		// ALTERA ESPAÇOS E HIFEN PARA UNDERLINE
@@ -350,13 +357,13 @@ class CsvToPgsql
 		}
 
 		if($this->createPkey){
-			$ddlCols[] =  'CONSTRAINT '.$name.'_pkey PRIMARY KEY (_pkey_)';
+			$ddlCols[] =  'CONSTRAINT "'.$name.'_pkey" PRIMARY KEY (_pkey_)';
 		}
 
 		$cols = implode(','.PHP_EOL."\t", $ddlCols);
 
 		$ddl = <<<ddl
-CREATE TABLE IF NOT EXISTS {$this->_dbConnection['DB_SCHEMA']}.{$name} (
+CREATE TABLE IF NOT EXISTS {$this->_dbConnection['DB_SCHEMA']}."{$name}" (
 	$cols
 );
 ddl;
@@ -389,6 +396,11 @@ ddl;
 
 			$val = $currentLine[$key] ?? null;
 
+			// RESTORE ; [&semi]
+			if(strpos($val, '[&semi]')){
+				$val = str_replace('[&semi]', ';', $val);
+			}
+
 			// ESCAPE SIMPLES QUOTES '
 			if(!is_null($val)){
 				$val = 'E\''.str_replace("'", "\'", $val).'\'';
@@ -406,7 +418,7 @@ ddl;
 		$cols = implode(', ', array_keys($payload));
 		$vals = implode(', ', array_values($payload));
 
-		$this->_insertQuery[] = sprintf('INSERT INTO %s.%s (%s) VALUES (%s);', $this->_dbConnection['DB_SCHEMA'], $tableName, $cols, $vals);
+		$this->_insertQuery[] = sprintf('INSERT INTO %s."%s" (%s) VALUES (%s);', $this->_dbConnection['DB_SCHEMA'], $tableName, $cols, $vals);
 	}
 
 	protected function _insert(bool $inLoop = true) :void
@@ -442,16 +454,38 @@ ddl;
 		}
 	}
 
+	protected function scapeDelimiterInPgsqlArray($line){
+
+		$start = strpos($line, '[{');
+		$end = strrpos($line, '}]');
+
+		if($start and $end){
+
+			$arrayInString = substr($line, $start, ($end - $start + 2));
+	
+			$replace = str_replace(';', '[&semi]', $arrayInString);
+
+			$line = str_replace($arrayInString, $replace, $line);
+		}
+
+		return $line;
+	}
+
 	// CONVERTE CSV TO ARRAY, FAZENDO OS DEVIDOS TRATAMENTOS
 	protected function _readCsvStructure($pointer, string $delimiter, $ddls, $fn) :array{
 
 		$key = 0;
-		while (($line = fgetcsv($pointer, 2048, $delimiter)) !== false){
+		while (($line = fgets($pointer, 10000)) !== false){
 
-			// SKIT EMPTY LINES ON CSV FILE
+			// PROCESS ARRAY PGSQL IN CSV
+			$line = $this->scapeDelimiterInPgsqlArray($line);
+
+			$line = str_getcsv($line, $delimiter);
+
+			// SKIP EMPTY LINES ON CSV FILE
 			if(count($line) > 0){
 
-				// FAZ TRIM
+				// MAKE TRIM
 				foreach($line as $k => $v){
 
 					// CONVERT ENCODING
@@ -486,7 +520,12 @@ ddl;
 	protected function _readCsvAsArray($pointer, string $delimiter, $tableName, $ddls, $fnInsert) :void{
 
 		$key = 0;
-		while (($line = fgetcsv($pointer, 2048, $delimiter)) !== false){
+		while (($line = fgets($pointer, 10000)) !== false){
+
+			// PROCESS ARRAY PGSQL IN CSV
+			$line = $this->scapeDelimiterInPgsqlArray($line);
+
+			$line = str_getcsv($line, $delimiter);
 
 			// SKIP THE FIRST LINE OF CSV
 			if($key == 0){
@@ -494,7 +533,7 @@ ddl;
 				continue;
 			}
 
-			// SKIT CSV EMPTY LINES
+			// SKIP CSV EMPTY LINES
 			if(count($line) != count($ddls[$tableName])){
 				continue;
 			}
@@ -549,6 +588,11 @@ ddl;
 
 			print 'Start to create tables...'.PHP_EOL;
 
+			// FIND SEPARATOR BY FIRST LINE ONLY
+			if($this->readSeparator == '1'){
+				$delimiter = $this->_delimiter;
+			}
+
 			// CREATE TABLES
 			$ddls = [];
 			foreach($files as $name => $index){
@@ -560,9 +604,13 @@ ddl;
 					$pointer = tmpfile();
 					fwrite($pointer, $zip->getFromIndex($index));
 
-					// LÊ UM POR UM
+					// READ ONE BY ONE
 					fseek($pointer, 0);
-					$delimiter = $this->_findDelimiter($pointer);
+
+					// FIND SEPARATOR LINE BY LINE
+					if($this->readSeparator == '2'){
+						$delimiter = $this->_findDelimiter($pointer);
+					}
 
 					fseek($pointer, 0);
 
@@ -584,7 +632,7 @@ ddl;
 						}
 
 						// VALUES
-						if($key > 0){
+						if($key >= 1){
 
 							// IDENTIFICA TIPOS DE DADOS
 							// DETECT DATA TYPES
@@ -637,12 +685,17 @@ ddl;
 						$pointer = tmpfile();
 						fwrite($pointer, $zip->getFromIndex($index));
 
+						// READ ONE BY ONE
 						fseek($pointer, 0);
-						$delimiter = $this->_findDelimiter($pointer);
+
+						// FIND SEPARATOR LINE BY LINE
+						if($this->readSeparator == '2'){
+							$delimiter = $this->_findDelimiter($pointer);
+						}
 
 						fseek($pointer, 0);
 						$this->_readCsvAsArray($pointer, $delimiter, $tableName, $ddls, function($tableName, $ddls, $currentLine){
-	
+
 							// INSERT DATA ON TABLE
 							$this->_prepareInsert($tableName, $ddls, $currentLine);
 
