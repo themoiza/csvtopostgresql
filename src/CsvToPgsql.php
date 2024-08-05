@@ -11,20 +11,22 @@ class CsvToPgsql
 	 *
 	 * @var object|bool
 	 */
-	protected object|bool $_pdo = false;
+	protected $_pdo = false;
 
 	/**
 	 * PDO connection config, user, pass, db, schema, port, ip
 	 *
 	 * @var array
 	 */
-	protected array $_dbConnection = [];
+	protected $_dbConnection = [];
 
 	/**
 	 * ZIP temp_file()
 	 *
 	 */
 	protected $_tempZipFile;
+
+	protected $_currentTable;
 
 	/**
 	 * If will be created a _pkey_ columns and pkey constraint
@@ -68,11 +70,13 @@ class CsvToPgsql
 	 */
 	protected $outputEncoding = 'UTF-8';
 
+	protected $skipFiles = [];
+
 	/**
 	 * Read separator
 	 *
 	 * @var string
-	 * 1 = Only first line, 2 line by line 
+	 * 1 = Only first line, 2 line by line
 	 */
 	protected $readSeparator = '1';
 
@@ -84,15 +88,15 @@ class CsvToPgsql
 
 	public $byPageInsert = 50000;
 
-    /**
-     * Set a config.
-     *
-     * @param  string  $param
-     * @param  bool|string  $value
-     * @param  array  $options
-     * @return object $this
-     */
-	public function setConfig(string $param, bool|string $value) :object
+	/**
+	 * Set a config.
+	 *
+	 * @param  string  $param
+	 * @param  bool|string  $value
+	 * @param  array  $options
+	 * @return object $this
+	 */
+	public function setConfig(string $param, $value)
 	{
 		// VALIDATE BOOL PARAMS
 		if(is_bool($value) and in_array($param, ['createPkey', 'createPkey', 'enableTransaction', 'justCreateTables'])){
@@ -105,16 +109,21 @@ class CsvToPgsql
 			$this->{$param} = $value;
 		}
 
+		// VALIDATE ARRAY PARAMS
+		if(is_array($value) and in_array($param, ['skipFiles'])){
+			$this->{$param} = $value;
+		}
+
 		return $this;
 	}
 
-    /**
-     * Set multiples configs.
-     *
-     * @param  array  $configs
-     * @return object $this
-     */
-	public function setConfigs(array $configs) :object
+	/**
+	 * Set multiples configs.
+	 *
+	 * @param  array  $configs
+	 * @return object $this
+	 */
+	public function setConfigs(array $configs)
 	{
 
 		foreach($configs as $param => $value){
@@ -125,15 +134,15 @@ class CsvToPgsql
 		return $this;
 	}
 
-    /**
-     * Try to connect to postgresql.
-     *
-     * @param array $dbConnection
-     * @return object $this
-     *
-     * @throws \TheMoiza\Csvtopostgresql\CsvToPgsqlException
-     */
-	protected function _connectPgsql(array $dbConnection) :object
+	/**
+	 * Try to connect to postgresql.
+	 *
+	 * @param array $dbConnection
+	 * @return object $this
+	 *
+	 * @throws \TheMoiza\Csvtopostgresql\CsvToPgsqlException
+	 */
+	protected function _connectPgsql(array $dbConnection)
 	{
 
 		$this->_dbConnection = $dbConnection;
@@ -165,14 +174,15 @@ class CsvToPgsql
 		return $string;
 	}
 
-    /**
-     * Try to create the schema if it doesn't exist
-     *
-     * @return object $this
-     *
-     * @throws \TheMoiza\Csvtopostgresql\CsvToPgsqlException
-     */
-	protected function _createSchema() :object{
+	/**
+	 * Try to create the schema if it doesn't exist
+	 *
+	 * @return object $this
+	 *
+	 * @throws \TheMoiza\Csvtopostgresql\CsvToPgsqlException
+	 */
+	protected function _createSchema()
+	{
 
 		try{
 
@@ -186,14 +196,14 @@ class CsvToPgsql
 		return $this;
 	}
 
-    /**
-     * Save Zip file to temp file with tempfile() method
-     *
-     * @param string $zipUrl
-     * @return array
-     *
-     * @throws \TheMoiza\Csvtopostgresql\CsvToPgsqlException
-     */
+	/**
+	 * Save Zip file to temp file with tempfile() method
+	 *
+	 * @param string $zipUrl
+	 * @return array
+	 *
+	 * @throws \TheMoiza\Csvtopostgresql\CsvToPgsqlException
+	 */
 	protected function _readZip($zipUrl) :array{
 
 		if(!is_file($zipUrl)){
@@ -290,7 +300,7 @@ class CsvToPgsql
 
 		// DETECT DATE
 		}else if(preg_match('/^[0-9]{4}\-[0-9]{2}\-[0-9]{2}$/', $value)){
-			
+
 			$detected = 'date';
 
 		// IF MORE THAN 131072, SKIP, IT WILL BE A STRING
@@ -298,7 +308,12 @@ class CsvToPgsql
 
 			$detected = 'numeric';
 
-		// IF MORE THAN 2147483647, SKIP, IT WILL BE A STRING
+		// IF IS INTEGER BUT IS OUT OF RANGE, TURN TO bigint
+		}else if(preg_match('/^[0-9]+$/', $value) and $value > 2147483647){
+
+			$detected = 'bigint';
+
+		// IF LESS THAN 2147483647 IS INTEGER
 		}else if(preg_match('/^[0-9]+$/', $value) and $value <= 2147483647){
 
 			$detected = 'integer';
@@ -331,13 +346,17 @@ class CsvToPgsql
 
 				$ddlCols[] = '"'.$col['column'].'" timestamp NULL';
 
+			}else if($col['type'] == 'bigint'){
+
+				$ddlCols[] = '"'.$col['column'].'" bigint NULL';
+
 			}else if($col['type'] == 'integer'){
 
 				$ddlCols[] = '"'.$col['column'].'" int4 NULL';
 
 			}else if($col['type'] == 'numeric'){
 
-				$ddlCols[] = '"'.$col['column'].'" numeric(14,8) NULL';
+				$ddlCols[] = '"'.$col['column'].'" numeric(1000,50) NULL';
 
 			}else if($col['type'] == 'date'){
 
@@ -396,11 +415,6 @@ ddl;
 
 			$val = $currentLine[$key] ?? null;
 
-			// RESTORE ; [&semi]
-			if(strpos($val, '[&semi]')){
-				$val = str_replace('[&semi]', ';', $val);
-			}
-
 			// ESCAPE SIMPLES QUOTES '
 			if(!is_null($val)){
 				$val = 'E\''.str_replace("'", "\'", $val).'\'';
@@ -411,6 +425,11 @@ ddl;
 				$val = 'null';
 			}
 
+			// SKIP INVALID CHAR
+			if($val == "E'\x00'"){
+				$val = "E''";
+			}
+
 			$payload['"'.$column.'"'] = $val;
 		}
 
@@ -419,37 +438,57 @@ ddl;
 		$vals = implode(', ', array_values($payload));
 
 		$this->_insertQuery[] = sprintf('INSERT INTO %s."%s" (%s) VALUES (%s);', $this->_dbConnection['DB_SCHEMA'], $tableName, $cols, $vals);
+
+		$this->_currentTable = $tableName;
 	}
 
 	protected function _insert(bool $inLoop = true) :void
 	{
 
+		$savepoint = $this->_safeString(str_replace('/', '_', $this->_currentTable));
+
 		if($inLoop === true and count($this->_insertQuery) == $this->byPageInsert){
+
+			$sql = implode(PHP_EOL, $this->_insertQuery);
+
+			// CREATE SAVE POINT
+			$this->_pdo->query('SAVEPOINT savepoint_'.$savepoint.';');
 
 			try{
 
-				$this->_pdo->query(implode(PHP_EOL, $this->_insertQuery));
+				$this->_pdo->query($sql);
 
 				$this->_insertQuery = [];
 
-				print 'Insert Page...'.PHP_EOL;
+				print 'Insert into table '.$this->_safeString(str_replace('/', '_', $this->_currentTable)).' page...'.PHP_EOL;
 
 			} catch (\PDOException $e){
 
-				throw new CsvToPgsqlException($e->getMessage());
+				// ROLLBACK SAVE POINT
+				$this->_pdo->query('ROLLBACK TO savepoint_'.$savepoint.';');
+
+				print 'Insert page error at table: '.$this->_currentTable.', '.$e->getMessage().PHP_EOL;
 			}
 
 		}else if($inLoop === false and count($this->_insertQuery) > 0){
 
+			$sql = implode(PHP_EOL, $this->_insertQuery);
+
+			// CREATE SAVE POINT
+			$this->_pdo->query('SAVEPOINT savepoint_'.$savepoint.';');
+
 			try{
 
-				$this->_pdo->query(implode(PHP_EOL, $this->_insertQuery));
+				$this->_pdo->query($sql);
 
 				$this->_insertQuery = [];
 
 			} catch (\PDOException $e){
 
-				throw new CsvToPgsqlException($e->getMessage());
+				// ROLLBACK SAVE POINT
+				$this->_pdo->query('ROLLBACK TO savepoint_'.$savepoint.';');
+
+				print 'Insert error at table: '.$this->_currentTable.', '.$e->getMessage().PHP_EOL;
 			}
 		}
 	}
@@ -462,7 +501,7 @@ ddl;
 		if($start and $end){
 
 			$arrayInString = substr($line, $start, ($end - $start + 2));
-	
+
 			$replace = str_replace(';', '[&semi]', $arrayInString);
 
 			$line = str_replace($arrayInString, $replace, $line);
@@ -533,6 +572,11 @@ ddl;
 				continue;
 			}
 
+			// SKIP TABLE WITH READING ERROR
+			if(!isset($ddls[$tableName])){
+				continue;
+			}
+
 			// SKIP CSV EMPTY LINES
 			if(count($line) != count($ddls[$tableName])){
 				continue;
@@ -565,11 +609,11 @@ ddl;
 	}
 
 	// MÉTODO PRINCIPAL PARA A CONVERSÃO
-	public function convertCsvFromZip(string $zipUrl, bool|array $dbConnection = false) :array{
+	public function convertCsvFromZip(string $zipUrl, $dbConnection = false) :array{
 
 		try {
 
-			$files = $this->_readZip($zipUrl);
+			$allFiles = $this->_readZip($zipUrl);
 
 			if(is_array($dbConnection) and $dbConnection){
 				$this->_connectPgsql($dbConnection);
@@ -593,81 +637,135 @@ ddl;
 				$delimiter = $this->_delimiter;
 			}
 
+			// SKIP FILES
+			$files = array_filter($allFiles, function($key) use ($allFiles) {
+				foreach ($this->skipFiles as $item) {
+					if (strpos($key, $item) !== false) {
+						return false;
+					}
+				}
+				return true;
+			}, ARRAY_FILTER_USE_KEY);
+
 			// CREATE TABLES
 			$ddls = [];
 			foreach($files as $name => $index){
 
-				if(preg_match('/.csv$/', $name)){
+				print 'Reading file '.$name.'...'.PHP_EOL;
 
-					$tableName = $this->_safeString($name);
+				try {
 
-					$pointer = tmpfile();
-					fwrite($pointer, $zip->getFromIndex($index));
+					if(preg_match('/.csv$/', $name)){
 
-					// READ ONE BY ONE
-					fseek($pointer, 0);
+						$tableName = $this->_safeString($name);
 
-					// FIND SEPARATOR LINE BY LINE
-					if($this->readSeparator == '2'){
-						$delimiter = $this->_findDelimiter($pointer);
+						$pointer = tmpfile();
+						fwrite($pointer, $zip->getFromIndex($index));
+
+						// READ ONE BY ONE
+						fseek($pointer, 0);
+
+						// FIND SEPARATOR LINE BY LINE
+						if($this->readSeparator == '2'){
+							$delimiter = $this->_findDelimiter($pointer);
+						}
+
+						fseek($pointer, 0);
+
+						$ddls = $this->_readCsvStructure($pointer, $delimiter, $ddls, function($currentLine, $key, $ddls) use ($tableName){
+
+							// HEADER
+							if($key == 0){
+
+								// CREATE COLUMNS
+								foreach ($currentLine as $colName){
+
+									$ddls[$tableName][] = [
+										'column' => $this->_safeString($colName),
+										'type' => 'undefined'
+									];
+								}
+
+								return $ddls;
+							}
+
+							// VALUES
+							if($key >= 1){
+
+								// IDENTIFICA TIPOS DE DADOS
+								// DETECT DATA TYPES
+								foreach($currentLine as $colIndex => $value){
+
+									// TRIM ON VALUE
+									$value = trim($value ?? '', " \n\t\t");
+
+									// IF STRING IS EMPTY, FORCE TO NULL
+									if($value === ''){
+										$value = null;
+									}
+
+									// IF NULL SKIP LOOP AND CONTINUE
+									if(is_null($value)){
+										continue;
+									}
+
+									// IGNORE TOTALS COLUMNS INDEX MORE THAN HEADER INDEX TOTAL
+									if(($colIndex + 1) > count($ddls[$tableName])){
+										continue;
+									}
+
+									// ERROR IN FILE
+									if(!isset($ddls[$tableName], $ddls[$tableName][$colIndex], $ddls[$tableName][$colIndex]['type'])){
+										throw new CsvToPgsqlFileException('CSV '.$tableName.' with parse error: '.$ddls[$tableName][$colIndex]);
+									}
+
+									// IF VALUE WAS DETECTED AS STRING, SKIP LOOP AND CONTINUE
+									if($ddls[$tableName][$colIndex]['type'] == 'text'){
+										continue;
+									}
+
+									$detected = $this->_detectDataType($value);
+
+									// SPECIAL CONDITION TO BIGINT
+									if($detected == 'integer' and ($ddls[$tableName][$colIndex]['type'] == 'undefined' or $ddls[$tableName][$colIndex]['type'] == 'bigint')){
+										$detected = 'bigint';
+									}
+
+									// SPECIAL CONDITION TO BIGINT
+									if($detected == 'bigint' and ($ddls[$tableName][$colIndex]['type'] == 'undefined' or $ddls[$tableName][$colIndex]['type'] == 'integer')){
+										$detected = 'bigint';
+									}
+
+									// SPECIAL CONDITION TO NUMERIC
+									if($detected == 'numeric' and ($ddls[$tableName][$colIndex]['type'] == 'undefined' or $ddls[$tableName][$colIndex]['type'] == 'integer')){
+										$detected = 'numeric';
+									}
+
+									// SPECIAL CONDITION TO NUMERIC
+									if($detected == 'integer' and ($ddls[$tableName][$colIndex]['type'] == 'undefined' or $ddls[$tableName][$colIndex]['type'] == 'numeric')){
+										$detected = 'numeric';
+									}
+
+									// DETECT DATA TYPES
+									$ddls[$tableName][$colIndex]['type'] = $detected;
+								}
+
+								return $ddls;
+							}
+						});
+
+						// CREATE TABLE
+						if(isset($ddls[$tableName])){
+
+							$this->_createTable($tableName, $ddls[$tableName]);
+						}
+
+						fclose($pointer);
 					}
 
-					fseek($pointer, 0);
+				} catch (CsvToPgsqlFileException $e){
 
-					$ddls = $this->_readCsvStructure($pointer, $delimiter, $ddls, function($currentLine, $key, $ddls) use ($tableName){
-
-						// HEADER
-						if($key == 0){
-		
-							// CREATE COLUMNS
-							foreach ($currentLine as $colName){
-
-								$ddls[$tableName][] = [
-									'column' => $this->_safeString($colName),
-									'type' => 'undefined'
-								];
-							}
-
-							return $ddls;
-						}
-
-						// VALUES
-						if($key >= 1){
-
-							// IDENTIFICA TIPOS DE DADOS
-							// DETECT DATA TYPES
-							foreach($currentLine as $colIndex => $value){
-
-								// TRIM ON VALUE
-								$value = trim($value ?? '', " \n\t\t");
-
-								// IF STRING IS EMPTY, FORCE TO NULL
-								if($value === ''){
-									$value = null;
-								}
-
-								// IF NULL SKIP LOOP AND CONTINUE
-								if(is_null($value)){
-									continue;
-								}
-	
-								// IF VALUE WAS DETECTED AS STRING, SKIP LOOP AND CONTINUE
-								if($ddls[$tableName][$colIndex]['type'] == 'text'){
-									continue;
-								}
-
-								// DETECT DATA TYPES
-								$ddls[$tableName][$colIndex]['type'] = $this->_detectDataType($value);
-							}
-
-							return $ddls;
-						}
-					});
-
-					// CREATE TABLE
-					$this->_createTable($tableName, $ddls[$tableName]);
-
-					fclose($pointer);
+					print 'Skip file '.$name.' reading error'.PHP_EOL;
 				}
 			}
 
@@ -711,7 +809,7 @@ ddl;
 					$this->_colsHead = false;
 					$this->_insertQuery = [];
 
-					print 'Insert into table '.$tableName.' is done'.PHP_EOL;
+					print 'Insert into table '.$tableName.' was done'.PHP_EOL;
 				}
 			}
 

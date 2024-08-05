@@ -40,7 +40,8 @@ class ImportTest extends TestCase{
 			'justCreateTables' => false,
 			'inputEncoding' => 'UTF-8',
 			'outputEncoding' => 'UTF-8',
-			'readSeparator' => '2'
+			'readSeparator' => '2',
+			'skipFiles' => []
 		]);
 
 		$result = $csvToPgsql->convertCsvFromZip(
@@ -94,7 +95,7 @@ class ImportTest extends TestCase{
 			$adjustArray[$line['column']] = $line;
 		}
 
-		$this->assertEquals('integer', $adjustArray['integer']['type']);
+		$this->assertEquals('bigint', $adjustArray['integer']['type']);
 		$this->assertEquals('text', $adjustArray['string']['type']);
 		$this->assertEquals('timestamp without time zone', $adjustArray['timestamp']['type']);
 		$this->assertEquals('date', $adjustArray['date']['type']);

@@ -14,7 +14,8 @@ $csvToPgsql->setConfigs([
 	'justCreateTables' => false,
 	'inputEncoding' => 'UTF-8',
 	'outputEncoding' => 'UTF-8',
-	'readSeparator' => '1'
+	'readSeparator' => '1',
+	'skipFiles' => []
 ]);
 
 print sprintf('Start at %s Wait...', date('d/m/Y H:i:s')).PHP_EOL;
