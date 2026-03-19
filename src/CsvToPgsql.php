@@ -445,7 +445,7 @@ ddl;
     protected function _insert(bool $inLoop = true) :void
     {
 
-        $savepoint = $this->_safeString(str_replace('/', '_', $this->_currentTable));
+        $savepoint = $this->_safeString(str_replace(['/','.'], '_', $this->_currentTable));
 
         if($inLoop === true and count($this->_insertQuery) == $this->byPageInsert){
 
@@ -460,7 +460,7 @@ ddl;
 
                 $this->_insertQuery = [];
 
-                print 'Insert into table '.$this->_safeString(str_replace('/', '_', $this->_currentTable)).' page...'.PHP_EOL;
+                print 'Insert into table '.$this->_safeString(str_replace(['/','.'], '_', $this->_currentTable)).' page...'.PHP_EOL;
 
             } catch (\PDOException $e){
 
@@ -657,7 +657,7 @@ ddl;
 
                     if(preg_match('/.csv$/', $name)){
 
-                        $tableName = $this->_safeString($name);
+                        $tableName = $this->_safeString(str_replace(['/','.'], '_', $name));
 
                         $pointer = tmpfile();
                         fwrite($pointer, $zip->getFromIndex($index));
@@ -778,7 +778,7 @@ ddl;
 
                     if(preg_match('/.csv$/', $name)){
 
-                        $tableName = $this->_safeString($name);
+                        $tableName = $this->_safeString(str_replace(['/','.'], '_', $name));
 
                         $pointer = tmpfile();
                         fwrite($pointer, $zip->getFromIndex($index));

@@ -8,13 +8,13 @@ use TheMoiza\Csvtopostgresql\CsvToPgsql;
 $csvToPgsql = new CsvToPgsql;
 
 $csvToPgsql->setConfigs([
-	'createPkey' => true,
+	'createPkey' => false,
 	'enableTrim' => true,
 	'enableTransaction' => true,
 	'justCreateTables' => false,
 	'inputEncoding' => 'UTF-8',
 	'outputEncoding' => 'UTF-8',
-	'readSeparator' => '1',
+	'readSeparator' => '2',
 	'skipFiles' => []
 ]);
 
